@@ -66,6 +66,11 @@
     },
     {
       "suite": "test/RouletteLaunchEth.fork.t.sol:RouletteLaunchEthForkTest",
+      "test": "test_initialBuyIsBurnedAtLaunch()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteLaunchEth.fork.t.sol:RouletteLaunchEthForkTest",
       "test": "test_initializeRunsOnlyOnce()",
       "status": "Success"
     },

@@ -186,4 +186,41 @@ contract RouletteLaunchEthForkTest is Test {
         _buy(0.0034 ether);
         assertEq(hook.swapCount(), 1);
     }
+
+    // ───────────── initial buy ─────────────
+
+    function test_initialBuyIsBurnedAtLaunch() public {
+        RouletteInitializerEth init2 = new RouletteInitializerEth(MANAGER);
+        RouletteToken token2 = new RouletteToken("TEST", "TEST", SUPPLY, address(init2), address(MANAGER));
+        address hookAddr = address(
+            uint160(
+                Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+                    | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
+            ) | (uint160(0x5555) << 144)
+        );
+        deployCodeTo(
+            "RouletteHookEth.sol:RouletteHookEth",
+            abi.encode(MANAGER, address(token2), address(init2), dev, keeper, chain[0], 0.0033 ether),
+            hookAddr
+        );
+        RouletteHookEth hook2 = RouletteHookEth(hookAddr);
+
+        vm.deal(address(this), 1 ether);
+        uint256 initEthBefore = address(init2).balance; // на адресе форка могла лежать чужая пыль
+        init2.initialize{value: 0.01 ether}(address(hook2), START_TICK);
+
+        uint256 burned = init2.initialBuyBurned();
+        assertEq(init2.initialBuyEth(), 0.01 ether);
+        // 0.01 ETH минус 3% хуку при ~5e8 токенов за ETH на старте ≈ 4.85M токенов
+        assertApproxEqRel(burned, 4_850_000 ether, 0.03e18, "about 0.485% of supply");
+        assertEq(token2.balanceOf(address(init2)), 0, "initializer keeps no tokens");
+        assertEq(address(init2).balance, initEthBefore, "the whole initial buy is spent");
+        assertEq(token2.balanceOf(address(this)), 0, "launcher gets no tokens");
+        assertLe(token2.totalSupply(), SUPPLY - burned, "bought tokens are gone");
+        assertEq(token2.eligibleSupply(), 0, "nobody holds tokens yet");
+        assertEq(hook2.swapCount(), 1, "the initial buy counts as the first swap");
+        assertEq(hook2.devAccrued(), 0.0001 ether, "1% as on any swap");
+        assertEq(hook2.pendingPot(), 0.0002 ether, "2% to the pot as on any swap");
+    }
 }
+

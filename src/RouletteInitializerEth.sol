@@ -8,7 +8,7 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {ModifyLiquidityParams, SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
 
 interface IRouletteHookView {
@@ -23,6 +23,8 @@ interface IBurnableToken {
 /// @title RouletteInitializerEth
 /// @notice Запускает пул ETH/TOKEN одним вызовом в транзакции запуска: создаёт пул по стартовой цене
 ///         и кладёт весь supply односторонней позицией от минимальной цены до стартовой.
+///         Если вызов пришёл с ETH (initial buy), на него сразу покупается токен по стартовой цене,
+///         и купленное сжигается — у запускающего токенов не остаётся.
 /// @dev    Позицию забрать нельзя: у контракта нет владельца и нет функции вывода, поэтому
 ///         ликвидность заблокирована навсегда. Пыль округления сжигается.
 contract RouletteInitializerEth is IUnlockCallback {
@@ -33,8 +35,11 @@ contract RouletteInitializerEth is IUnlockCallback {
     bool public launched;
     uint128 public lockedLiquidity;
     int24 public startTick;
+    uint256 public initialBuyEth;
+    uint256 public initialBuyBurned;
 
     event Launched(address indexed hook, int24 startTick, uint128 liquidity, uint256 tokensInPool, uint256 dustBurned);
+    event InitialBuyBurned(uint256 ethIn, uint256 tokensBurned);
 
     error AlreadyLaunched();
     error NotPoolManager();
@@ -49,7 +54,8 @@ contract RouletteInitializerEth is IUnlockCallback {
     /// @notice Вызывается один раз фабрикой Programmable сразу после деплоя всех контрактов.
     /// @param hook        хук этого запуска (его initializer() должен указывать на этот контракт)
     /// @param startTick_  тик стартовой цены; кратен шагу тиков пула
-    function initialize(address hook, int24 startTick_) external {
+    /// @dev   msg.value > 0 — initial buy: покупка в этом же пуле (платит обычные 3% хуку) и сжигание.
+    function initialize(address hook, int24 startTick_) external payable {
         if (launched) revert AlreadyLaunched();
         launched = true;
 
@@ -65,17 +71,27 @@ contract RouletteInitializerEth is IUnlockCallback {
 
         startTick = startTick_;
         poolManager.initialize(key, TickMath.getSqrtPriceAtTick(startTick_));
-        poolManager.unlock(abi.encode(key, startTick_));
+        poolManager.unlock(abi.encode(false, key, startTick_, uint256(0)));
 
         IERC20 token = IERC20(Currency.unwrap(key.currency1));
         uint256 dust = token.balanceOf(address(this));
         if (dust != 0) IBurnableToken(address(token)).burn(dust);
         emit Launched(hook, startTick_, lockedLiquidity, token.balanceOf(address(poolManager)), dust);
+
+        if (msg.value != 0) {
+            poolManager.unlock(abi.encode(true, key, startTick_, msg.value));
+            uint256 bought = token.balanceOf(address(this));
+            IBurnableToken(address(token)).burn(bought);
+            initialBuyEth = msg.value;
+            initialBuyBurned = bought;
+            emit InitialBuyBurned(msg.value, bought);
+        }
     }
 
     function unlockCallback(bytes calldata data) external returns (bytes memory) {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
-        (PoolKey memory key, int24 upper) = abi.decode(data, (PoolKey, int24));
+        (bool buy, PoolKey memory key, int24 upper, uint256 ethIn) = abi.decode(data, (bool, PoolKey, int24, uint256));
+        if (buy) return _initialBuy(key, ethIn);
         IERC20 token = IERC20(Currency.unwrap(key.currency1));
         int24 lower = TickMath.minUsableTick(key.tickSpacing);
 
@@ -92,6 +108,16 @@ contract RouletteInitializerEth is IUnlockCallback {
         token.transfer(address(poolManager), uint256(uint128(-delta.amount1())));
         poolManager.settle();
         lockedLiquidity = liquidity;
+        return "";
+    }
+
+    /// @dev Покупка с точным входом на весь ETH initial buy (внутри колбэка msg.value = 0, поэтому сумма в data);
+    ///      токены приходят на этот контракт и сжигаются в initialize.
+    function _initialBuy(PoolKey memory key, uint256 ethIn) private returns (bytes memory) {
+        BalanceDelta d = poolManager.swap(key, SwapParams(true, -int256(ethIn), TickMath.MIN_SQRT_PRICE + 1), "");
+        if (d.amount0() != -int256(ethIn) || d.amount1() <= 0) revert InvalidSettlement();
+        poolManager.settle{value: ethIn}();
+        poolManager.take(key.currency1, address(this), uint256(int256(d.amount1())));
         return "";
     }
 }
