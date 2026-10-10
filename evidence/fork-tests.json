@@ -1,0 +1,158 @@
+{
+  "schemaVersion": "roulette.fork-test-evidence.v1",
+  "chainId": "1",
+  "poolManager": "0x000000000004444c5dc75cB358380D2e3dE08A90",
+  "command": "forge test --match-path test/RouletteHookEth.fork.t.sol test/RouletteLaunchEth.fork.t.sol test/RouletteMoodEth.fork.t.sol test/RouletteRewardsEth.fork.t.sol",
+  "results": [
+    {
+      "suite": "test/RouletteMoodEth.fork.t.sol:RouletteMoodEthForkTest",
+      "test": "test_buyingRoundIsExcitedThenSellingRoundIsHungry()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteRewardsEth.fork.t.sol:RouletteRewardsEthForkTest",
+      "test": "test_claimPaysOnce()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteHookEth.fork.t.sol:RouletteHookEthForkTest",
+      "test": "test_devClaim()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteHookEth.fork.t.sol:RouletteHookEthForkTest",
+      "test": "test_dipWaitsForKeeperThenRollsOver()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteHookEth.fork.t.sol:RouletteHookEthForkTest",
+      "test": "test_feeOnExactInputBuy()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteHookEth.fork.t.sol:RouletteHookEthForkTest",
+      "test": "test_feeOnExactInputSell()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteHookEth.fork.t.sol:RouletteHookEthForkTest",
+      "test": "test_feeOnExactOutputBuy()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteHookEth.fork.t.sol:RouletteHookEthForkTest",
+      "test": "test_feeOnExactOutputSell()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteLaunchEth.fork.t.sol:RouletteLaunchEthForkTest",
+      "test": "test_firstBuyPricesAtAboutTwoEthFdv()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteMoodEth.fork.t.sol:RouletteMoodEthForkTest",
+      "test": "test_flatRoundsAreCalmUntilVolumeJumps()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteRewardsEth.fork.t.sol:RouletteRewardsEthForkTest",
+      "test": "test_holderRewardsOutcomePaysHolders()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteLaunchEth.fork.t.sol:RouletteLaunchEthForkTest",
+      "test": "test_hookRejectsAnyOtherInitializer()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteLaunchEth.fork.t.sol:RouletteLaunchEthForkTest",
+      "test": "test_initializeRunsOnlyOnce()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteRewardsEth.fork.t.sol:RouletteRewardsEthForkTest",
+      "test": "test_lateBuyerGetsNothingFromEarlierRewards()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteLaunchEth.fork.t.sol:RouletteLaunchEthForkTest",
+      "test": "test_launchLocksWholeSupplyAtStartPrice()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteMoodEth.fork.t.sol:RouletteMoodEthForkTest",
+      "test": "test_midRoundSwapGas()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteHookEth.fork.t.sol:RouletteHookEthForkTest",
+      "test": "test_missedWindowFallsBackToBurnJar()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteLaunchEth.fork.t.sol:RouletteLaunchEthForkTest",
+      "test": "test_nobodyCanPullTheLiquidity()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteMoodEth.fork.t.sol:RouletteMoodEthForkTest",
+      "test": "test_oddsAre55_15_15_15ForEveryMood()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteHookEth.fork.t.sol:RouletteHookEthForkTest",
+      "test": "test_onlyInitializerAndOnlyOnePool()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteHookEth.fork.t.sol:RouletteHookEthForkTest",
+      "test": "test_onlyKeeperRunsOutcomes()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteHookEth.fork.t.sol:RouletteHookEthForkTest",
+      "test": "test_onlyOwnerChangesKeeper()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteHookEth.fork.t.sol:RouletteHookEthForkTest",
+      "test": "test_revealExecutesOutcomeImmediately()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteMoodEth.fork.t.sol:RouletteMoodEthForkTest",
+      "test": "test_revealFollowsRollAndMood()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteRewardsEth.fork.t.sol:RouletteRewardsEthForkTest",
+      "test": "test_rewardWaitsUntilThereAreHolders()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteRewardsEth.fork.t.sol:RouletteRewardsEthForkTest",
+      "test": "test_rewardsSplitByBalanceAndSkipPoolAndLaunchAccounts()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteLaunchEth.fork.t.sol:RouletteLaunchEthForkTest",
+      "test": "test_roundsRunOnLaunchedPool()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteRewardsEth.fork.t.sol:RouletteRewardsEthForkTest",
+      "test": "test_sellingStopsFutureRewards()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteLaunchEth.fork.t.sol:RouletteLaunchEthForkTest",
+      "test": "test_smallSwapsPayButDoNotCount()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteRewardsEth.fork.t.sol:RouletteRewardsEthForkTest",
+      "test": "test_transferKeepsEarnedRewardsWithSender()",
+      "status": "Success"
+    }
+  ]
+}
