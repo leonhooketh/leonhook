@@ -141,40 +141,95 @@ contract RouletteHookEthForkTest is Test {
     }
 
     function _accounted() internal view returns (uint256) {
-        return hook.burnJar() + hook.dipJar() + hook.pendingPot() + hook.epochPot() + hook.devAccrued() + hook.fullRangeEth();
+        return hook.burnJar() + hook.dipJar() + hook.pendingPot() + hook.epochPot() + hook.devAccrued() + hook.fullRangeEth()
+            + hook.platformAccrued();
     }
 
     // ───────────── комиссии ─────────────
+
+    /// 0,3% Programmable от валовой ETH-суммы, вверх — как в EthereumNative30HookV3.
+    function _ceilBps(uint256 x, uint256 bps) internal pure returns (uint256) {
+        return (x * bps + 9_999) / 10_000;
+    }
 
     function test_feeOnExactInputBuy() public {
         uint256 before = trader.balance;
         _buy(1 ether);
         assertEq(before - trader.balance, 1 ether, "trader pays exactly 1 ETH");
-        assertEq(_claims(), 0.03 ether, "3% to hook");
-        assertEq(hook.devAccrued(), 0.01 ether);
-        assertEq(hook.pendingPot(), 0.02 ether);
+        assertEq(_claims(), 0.033 ether, "3.3% of gross input to hook");
+        assertEq(hook.platformAccrued(), 0.003 ether, "0.3% for Programmable");
+        assertEq(hook.devAccrued(), 0.01 ether, "1% developer");
+        assertEq(hook.pendingPot(), 0.02 ether, "2% pot");
     }
 
     function test_feeOnExactInputSell() public {
         BalanceDelta d = _sellTokens(10_000_000 ether);
         uint256 received = uint256(int256(d.amount0()));
         uint256 fee = _claims();
-        assertGt(fee, 0);
-        assertApproxEqAbs(fee, (received + fee) * 300 / 10_000, 1, "3% of pool output");
+        uint256 gross = received + fee; // выход пула до комиссий
+        assertEq(fee, _ceilBps(gross, 330), "3.3% of gross pool output");
+        assertEq(hook.platformAccrued(), _ceilBps(gross, 30), "0.3% of gross for Programmable");
     }
 
     function test_feeOnExactOutputBuy() public {
         BalanceDelta d = _swap(true, 1_000_000 ether, 1 ether);
         assertEq(uint256(int256(d.amount1())), 1_000_000 ether);
-        uint256 paid = uint256(-int256(d.amount0()));
+        uint256 gross = uint256(-int256(d.amount0())); // всё, что заплатил трейдер
         uint256 fee = _claims();
-        assertApproxEqAbs(fee, (paid - fee) * 300 / 10_000, 1, "3% on top of pool input");
+        assertApproxEqAbs(fee, gross * 330 / 10_000, 1, "3.3% of gross funded input");
+        assertEq(hook.platformAccrued(), _ceilBps(gross, 30), "0.3% of gross for Programmable");
     }
 
     function test_feeOnExactOutputSell() public {
         BalanceDelta d = _swap(false, 0.1 ether, 0);
         assertEq(uint256(int256(d.amount0())), 0.1 ether, "trader gets exactly what they asked");
-        assertEq(_claims(), 0.003 ether);
+        uint256 gross = (uint256(0.1 ether) * 10_000 + 9_669) / 9_670; // выход пула до комиссий
+        assertEq(_claims(), gross - 0.1 ether);
+        assertEq(hook.platformAccrued(), _ceilBps(gross, 30), "0.3% of gross for Programmable");
+    }
+
+    function test_platformClaimGoesOnlyToRecipient() public {
+        _buy(1 ether);
+        _sellTokens(5_000_000 ether);
+        uint256 owed = hook.platformAccrued();
+        assertGt(owed, 0);
+        address recipient = hook.PLATFORM_RECIPIENT();
+        assertEq(recipient, 0xD88539d3c4C460136a733A3Fd60cf6BF269079da);
+        uint256 before = recipient.balance;
+        uint256 claimsBefore = _claims();
+        vm.prank(makeAddr("anyone")); // газ может оплатить кто угодно
+        hook.claimPlatform();
+        assertEq(recipient.balance - before, owed, "the whole platform balance went to the recipient");
+        assertEq(hook.platformAccrued(), 0);
+        assertEq(claimsBefore - _claims(), owed, "only platform claims were spent");
+        vm.expectRevert(RouletteHook.NotReady.selector);
+        hook.claimPlatform();
+    }
+
+    /// Собственные покупки хука (Burn, Full-range, Dip) тоже платят 0,3%; Holder rewards — не сделка.
+    function test_ownBuybacksPayPlatformFee() public {
+        bool[4] memory seen;
+        for (uint256 e; e < 60 && !(seen[0] && seen[1] && seen[2] && seen[3]); e++) {
+            _fillEpoch();
+            uint256 pot = hook.epochPot();
+            uint256 supply = token.totalSupply();
+            uint256 dip = hook.dipJar();
+            uint256 donated = hook.totalToHolders();
+            uint256 pa = hook.platformAccrued();
+            _reveal();
+            uint256 paid = hook.platformAccrued() - pa;
+            if (token.totalSupply() < supply) { seen[0] = true; assertEq(paid, _ceilBps(pot, 30), "Burn buy pays 0.3% of the pot"); }
+            else if (hook.dipJar() == dip + pot) { seen[1] = true; assertEq(paid, 0, "parked Dip is not a trade yet"); }
+            else if (hook.totalToHolders() == donated + pot) { seen[2] = true; assertEq(paid, 0, "holder rewards are not a trade"); }
+            else { seen[3] = true; assertEq(paid, _ceilBps(pot / 2, 30), "Full-range buys half the pot and pays 0.3% of it"); }
+        }
+        assertTrue(seen[0] && seen[1] && seen[2] && seen[3], "all four outcomes ran");
+        uint256 jar = hook.dipJar();
+        uint256 before = hook.platformAccrued();
+        vm.prank(keeper);
+        hook.executeDip(jar);
+        assertEq(hook.platformAccrued() - before, _ceilBps(jar, 30), "Dip buyback pays 0.3%");
+        assertEq(_claims(), _accounted(), "every wei of the hook's ETH is accounted for");
     }
 
     // ───────────── доступ ─────────────
@@ -287,6 +342,6 @@ contract RouletteHookEthForkTest is Test {
         hook.claimDev();
         assertEq(dev.balance, 0.01 ether);
         assertEq(hook.devAccrued(), 0);
-        assertEq(_claims(), 0.02 ether);
+        assertEq(_claims(), 0.023 ether, "pot 2% + Programmable 0.3% remain");
     }
 }

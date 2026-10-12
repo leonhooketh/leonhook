@@ -132,8 +132,8 @@ contract RouletteLaunchEthForkTest is Test {
         uint256 ethIn = 0.0001 ether;
         BalanceDelta d = _buy(ethIn);
         uint256 tokensOut = uint256(int256(d.amount1()));
-        // 3% уходит хуку, в пул — 97%.
-        uint256 fdvWei = SUPPLY * (ethIn * 97 / 100) / tokensOut;
+        // 3,3% уходит хуку (3% проекта + 0,3% Programmable), в пул — 96,7%.
+        uint256 fdvWei = SUPPLY * (ethIn * 967 / 1000) / tokensOut;
         assertApproxEqRel(fdvWei, 2.0062 ether, 0.002e18, "start FDV ~2.006 ETH");
     }
 
@@ -175,7 +175,7 @@ contract RouletteLaunchEthForkTest is Test {
         }
         assertTrue(seen[0] && seen[1] && seen[2] && seen[3], "all four outcomes ran");
         uint256 accounted = hook.burnJar() + hook.dipJar() + hook.pendingPot() + hook.epochPot() + hook.devAccrued()
-            + hook.fullRangeEth();
+            + hook.fullRangeEth() + hook.platformAccrued();
         assertEq(MANAGER.balanceOf(address(hook), 0), accounted, "every wei of the hook's ETH is accounted for");
     }
 
@@ -220,6 +220,7 @@ contract RouletteLaunchEthForkTest is Test {
         assertEq(token2.eligibleSupply(), 0, "nobody holds tokens yet");
         assertEq(hook2.swapCount(), 1, "the initial buy counts as the first swap");
         assertEq(hook2.devAccrued(), 0.0001 ether, "1% as on any swap");
+        assertEq(hook2.platformAccrued(), 0.00003 ether, "0.3% for Programmable on the initial buy too");
         assertEq(hook2.pendingPot(), 0.0002 ether, "2% to the pot as on any swap");
     }
 }

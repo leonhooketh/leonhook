@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "roulette.platform-fee-evidence.v1",
+  "chainId": "1",
+  "poolManager": "0x000000000004444c5dc75cB358380D2e3dE08A90",
+  "hookSource": "src/RouletteHookEth.sol",
+  "recipient": "0xD88539d3c4C460136a733A3Fd60cf6BF269079da",
+  "feeBps": 30,
+  "basis": "gross native trade value: buy = funded native input incl. hook fees, sell = native pool output before hook fees",
+  "rounding": "ceil per trade, computed on gross independently of the project fee (as EthereumNative30HookV3.quoteFees)",
+  "accrual": "hook-held ERC-6909 native claims in platformAccrued; claimPlatform() is callable by anyone and pays only the fixed recipient",
+  "command": "forge test --match-path test/RoulettePlatformFeeEth.fork.t.sol -vv",
+  "scenarios": {
+    "initial-buy": {
+      "test": "test_alternateRouterAllSwapTypes()",
+      "grossNative": "10000000000000000",
+      "platformFee": "30000000000000",
+      "expectedCeil30bps": "30000000000000"
+    },
+    "buy-exact-in": {
+      "test": "test_alternateRouterAllSwapTypes()",
+      "grossNative": "200000000000000000",
+      "platformFee": "600000000000000",
+      "expectedCeil30bps": "600000000000000"
+    },
+    "buy-exact-out": {
+      "test": "test_alternateRouterAllSwapTypes()",
+      "grossNative": "2518744946817423",
+      "platformFee": "7556234840453",
+      "expectedCeil30bps": "7556234840453"
+    },
+    "sell-exact-in": {
+      "test": "test_alternateRouterAllSwapTypes()",
+      "grossNative": "4865894313307962",
+      "platformFee": "14597682939924",
+      "expectedCeil30bps": "14597682939924"
+    },
+    "sell-exact-out": {
+      "test": "test_alternateRouterAllSwapTypes()",
+      "grossNative": "10341261633919339",
+      "platformFee": "31023784901759",
+      "expectedCeil30bps": "31023784901759"
+    },
+    "own-dip-buyback": {
+      "test": "test_ownBuybacksAndRecipientCredit()",
+      "grossNative": "19730418164619521",
+      "platformFee": "59191254493859",
+      "expectedCeil30bps": "59191254493859"
+    },
+    "own-burn-buyback": {
+      "test": "test_ownBuybacksAndRecipientCredit()",
+      "grossNative": "22601609528765389",
+      "platformFee": "67804828586297",
+      "expectedCeil30bps": "67804828586297"
+    },
+    "own-full-range-buy": {
+      "test": "test_ownBuybacksAndRecipientCredit()",
+      "grossNative": "14731534440351457",
+      "platformFee": "44194603321055",
+      "expectedCeil30bps": "44194603321055"
+    },
+    "universal-router-buy-exact-in": {
+      "test": "test_universalRouterBuy()",
+      "grossNative": "50000000000000000",
+      "platformFee": "150000000000000",
+      "expectedCeil30bps": "150000000000000"
+    }
+  },
+  "claim": {
+    "recipient": "0xD88539d3c4C460136a733A3Fd60cf6BF269079da",
+    "platformAccruedBefore": "23083081228267397",
+    "recipientBalanceDelta": "23083081228267397"
+  }
+}

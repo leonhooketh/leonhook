@@ -2,8 +2,13 @@
   "schemaVersion": "roulette.fork-test-evidence.v1",
   "chainId": "1",
   "poolManager": "0x000000000004444c5dc75cB358380D2e3dE08A90",
-  "command": "forge test --match-path test/RouletteHookEth.fork.t.sol test/RouletteLaunchEth.fork.t.sol test/RouletteMoodEth.fork.t.sol test/RouletteRewardsEth.fork.t.sol",
+  "command": "forge test --match-path test/RouletteHookEth.fork.t.sol test/RouletteLaunchEth.fork.t.sol test/RouletteMoodEth.fork.t.sol test/RouletteRewardsEth.fork.t.sol test/RoulettePlatformFeeEth.fork.t.sol",
   "results": [
+    {
+      "suite": "test/RoulettePlatformFeeEth.fork.t.sol:RoulettePlatformFeeEthForkTest",
+      "test": "test_alternateRouterAllSwapTypes()",
+      "status": "Success"
+    },
     {
       "suite": "test/RouletteMoodEth.fork.t.sol:RouletteMoodEthForkTest",
       "test": "test_buyingRoundIsExcitedThenSellingRoundIsHungry()",
@@ -70,6 +75,11 @@
       "status": "Success"
     },
     {
+      "suite": "test/RoulettePlatformFeeEth.fork.t.sol:RoulettePlatformFeeEthForkTest",
+      "test": "test_initialBuyPaysPlatformFee()",
+      "status": "Success"
+    },
+    {
       "suite": "test/RouletteLaunchEth.fork.t.sol:RouletteLaunchEthForkTest",
       "test": "test_initializeRunsOnlyOnce()",
       "status": "Success"
@@ -120,6 +130,21 @@
       "status": "Success"
     },
     {
+      "suite": "test/RoulettePlatformFeeEth.fork.t.sol:RoulettePlatformFeeEthForkTest",
+      "test": "test_ownBuybacksAndRecipientCredit()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteHookEth.fork.t.sol:RouletteHookEthForkTest",
+      "test": "test_ownBuybacksPayPlatformFee()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RouletteHookEth.fork.t.sol:RouletteHookEthForkTest",
+      "test": "test_platformClaimGoesOnlyToRecipient()",
+      "status": "Success"
+    },
+    {
       "suite": "test/RouletteHookEth.fork.t.sol:RouletteHookEthForkTest",
       "test": "test_revealExecutesOutcomeImmediately()",
       "status": "Success"
@@ -157,6 +182,11 @@
     {
       "suite": "test/RouletteRewardsEth.fork.t.sol:RouletteRewardsEthForkTest",
       "test": "test_transferKeepsEarnedRewardsWithSender()",
+      "status": "Success"
+    },
+    {
+      "suite": "test/RoulettePlatformFeeEth.fork.t.sol:RoulettePlatformFeeEthForkTest",
+      "test": "test_universalRouterBuy()",
       "status": "Success"
     }
   ]

@@ -14,6 +14,7 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary, toBeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {ModifyLiquidityParams, SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 interface IBurnable {
     function burn(uint256 amount) external;
@@ -21,7 +22,9 @@ interface IBurnable {
 }
 
 /// @title RouletteHookEth
-/// @notice Пул ETH/TOKEN на Uniswap v4. С ETH-ноги каждого свапа: 2% в пот, 1% разработчику.
+/// @notice Пул ETH/TOKEN на Uniswap v4. С ETH-ноги каждого свапа: 2% в пот, 1% разработчику и 0,3% Programmable.
+///         0,3% берутся с каждой сделки через любой роутер, с initial buy и с собственных выкупов хука,
+///         копятся на отдельном балансе и выводятся только на фиксированный адрес Programmable (claimPlatform).
 ///         Каждые 33 свапа (от minSwapEth) раунд закрывается. Бот раскрывает секрет, и в той же
 ///         транзакции пот раунда целиком исполняет выпавший исход: Burn / Holder rewards / Full-range
 ///         срабатывают сразу, Dip buyback откладывает пот до просадки, которую выбирает бот.
@@ -56,6 +59,10 @@ contract RouletteHookEth is IHooks, IUnlockCallback {
 
     uint256 public constant POT_BPS = 200; // 2% в пот
     uint256 public constant DEV_BPS = 100; // 1% разработчику
+    uint256 public constant PLATFORM_FEE_BPS = 30; // 0,3% Programmable — с каждой сделки, включая выкупы хука
+    uint256 internal constant BPS = 10_000;
+    /// Получатель 0,3% (политика programmable.ethereum-routed-native-fee.v2). Не меняется.
+    address public constant PLATFORM_RECIPIENT = 0xD88539d3c4C460136a733A3Fd60cf6BF269079da;
     uint256 public constant SWAPS_PER_EPOCH = 33;
     uint256 public constant FAVORED_PCT = 55; // шанс любимой мухи настроения; остальные делят 45% поровну
     // Тик пула = log(токенов за 1 ETH), поэтому цена токена растёт, когда тик падает.
@@ -74,6 +81,7 @@ contract RouletteHookEth is IHooks, IUnlockCallback {
 
     uint256 internal constant ETH_ID = 0; // ERC6909 id нативного ETH в PoolManager
     uint8 internal constant OP_DEV = 4;
+    uint8 internal constant OP_PLATFORM = 5;
     uint8 internal constant JAR_BURN = 0;
     uint8 internal constant JAR_DIP = 1;
 
@@ -93,6 +101,7 @@ contract RouletteHookEth is IHooks, IUnlockCallback {
     PoolId public poolId;
 
     uint256 public devAccrued;
+    uint256 public platformAccrued; // 0,3% Programmable, ждут claimPlatform()
 
     uint256 public pendingPot; // открытый раунд
     uint256 public swapCount;
@@ -140,6 +149,9 @@ contract RouletteHookEth is IHooks, IUnlockCallback {
     event Parked(uint8 indexed jar, uint256 amount);
     event DipRolledOver(uint256 amount);
     event DevClaimed(uint256 amount);
+    /// grossNative — валовая ETH-сумма сделки (вход покупки с комиссиями / выход продажи до комиссий).
+    event PlatformFeeAccrued(address indexed sender, bool isBuy, uint256 grossNative, uint256 platformFee);
+    event PlatformClaimed(uint256 amount);
     event ChainHeadSet(bytes32 head);
     event KeeperSet(address keeper);
     event OwnershipTransferred(address indexed from, address indexed to);
@@ -236,7 +248,7 @@ contract RouletteHookEth is IHooks, IUnlockCallback {
         }
         // ETH — указанная сумма: покупка с точным входом или продажа с точным выходом.
         uint256 amount = _abs(params.amountSpecified);
-        uint256 fee = _collect(amount);
+        uint256 fee = _collect(amount, params.amountSpecified > 0, sender, params.zeroForOne);
         // Засчитываем свап в afterSwap, когда цена пула уже после сделки.
         _stashEth(amount);
         return (IHooks.beforeSwap.selector, toBeforeSwapDelta(int128(int256(fee)), 0), 0);
@@ -255,7 +267,7 @@ contract RouletteHookEth is IHooks, IUnlockCallback {
         }
         // ETH — неуказанная сторона: покупка с точным выходом или продажа с точным входом.
         uint256 amount = _abs(delta.amount0());
-        uint256 fee = _collect(amount);
+        uint256 fee = _collect(amount, params.amountSpecified > 0, sender, params.zeroForOne);
         _onUserSwap(amount);
         return (IHooks.afterSwap.selector, int128(int256(fee)));
     }
@@ -328,6 +340,18 @@ contract RouletteHookEth is IHooks, IUnlockCallback {
         emit DevClaimed(amount);
     }
 
+    /// @notice Вывести накопленные 0,3% Programmable. Газ может оплатить кто угодно, ETH уходит только
+    ///         на PLATFORM_RECIPIENT. Перевода внутри сделок нет, поэтому получатель не может сломать свапы.
+    function claimPlatform() external {
+        uint256 amount = platformAccrued;
+        if (amount == 0 || _executing) revert NotReady();
+        platformAccrued = 0;
+        _executing = true;
+        poolManager.unlock(abi.encode(OP_PLATFORM, amount, uint8(0)));
+        _executing = false;
+        emit PlatformClaimed(amount);
+    }
+
     function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
         if (!_executing) revert NotReady();
         (uint8 op, uint256 amount, uint8 jar) = abi.decode(data, (uint8, uint256, uint8));
@@ -335,6 +359,10 @@ contract RouletteHookEth is IHooks, IUnlockCallback {
 
         if (op == OP_DEV) {
             poolManager.take(CurrencyLibrary.ADDRESS_ZERO, dev, amount);
+            return "";
+        }
+        if (op == OP_PLATFORM) {
+            poolManager.take(CurrencyLibrary.ADDRESS_ZERO, PLATFORM_RECIPIENT, amount);
             return "";
         }
         if (op == uint8(Outcome.HolderRewards)) {
@@ -351,12 +379,16 @@ contract RouletteHookEth is IHooks, IUnlockCallback {
 
         PoolKey memory key = poolKey();
         if (op == uint8(Outcome.FullRange)) {
-            (uint256 spent, uint256 bought) = _buy(key, amount / 2);
-            uint128 added = _addFullRange(key, amount - spent, bought);
+            uint256 half = amount / 2;
+            uint256 pf = _platformOnOwnBuy(half); // покупка хука тоже платит 0,3% Programmable
+            (uint256 spent, uint256 bought) = _buy(key, half - pf);
+            uint128 added = _addFullRange(key, amount - pf - spent, bought);
             emit Executed(Outcome.FullRange, amount, 0, added);
         } else {
-            (uint256 spent, uint256 bought) = _buy(key, amount);
-            if (amount > spent) _park(jar, amount - spent);
+            uint256 pf = _platformOnOwnBuy(amount);
+            uint256 swapIn = amount - pf;
+            (uint256 spent, uint256 bought) = _buy(key, swapIn);
+            if (swapIn > spent) _park(jar, swapIn - spent);
             if (bought != 0) {
                 poolManager.take(Currency.wrap(token), address(this), bought);
                 uint256 supplyBefore = IBurnable(token).totalSupply();
@@ -413,14 +445,47 @@ contract RouletteHookEth is IHooks, IUnlockCallback {
         return (params.amountSpecified < 0) == params.zeroForOne;
     }
 
-    /// @dev Комиссия с ETH-суммы свапа: хранится как ERC6909-клеймы хука в PoolManager.
-    function _collect(uint256 ethAmount) private returns (uint256 fee) {
-        fee = ethAmount * (POT_BPS + DEV_BPS) / 10_000;
+    /// @notice Валовая ETH-сумма сделки и комиссии с неё — та же схема, что в EthereumNative30HookV3:
+    ///         gross = вход покупки с комиссиями или выход продажи до комиссий; доли округляются вверх,
+    ///         0,3% Programmable считаются от gross независимо от доли проекта.
+    /// @param amountIsNet true, если ethAmount — сумма без комиссий (вход в пул при покупке с точным выходом
+    ///        или ETH, который трейдер хочет получить при продаже с точным выходом).
+    function quoteFees(uint256 ethAmount, bool amountIsNet)
+        public
+        pure
+        returns (uint256 gross, uint256 platformFee, uint256 projectFee)
+    {
+        uint256 totalBps = POT_BPS + DEV_BPS + PLATFORM_FEE_BPS;
+        gross = amountIsNet ? Math.mulDiv(ethAmount, BPS, BPS - totalBps, Math.Rounding.Ceil) : ethAmount;
+        uint256 total = amountIsNet ? gross - ethAmount : Math.mulDiv(gross, totalBps, BPS, Math.Rounding.Ceil);
+        platformFee = Math.mulDiv(gross, PLATFORM_FEE_BPS, BPS, Math.Rounding.Ceil);
+        projectFee = total - platformFee;
+    }
+
+    /// @dev Комиссия с ETH-суммы свапа пользователя: хранится как ERC6909-клеймы хука в PoolManager,
+    ///      по трём раздельным балансам — пот, 1% разработчика, 0,3% Programmable.
+    function _collect(uint256 ethAmount, bool amountIsNet, address sender, bool isBuy) private returns (uint256 fee) {
+        (uint256 gross, uint256 platformFee, uint256 projectFee) = quoteFees(ethAmount, amountIsNet);
+        fee = platformFee + projectFee;
         if (fee == 0) return 0;
         poolManager.mint(address(this), ETH_ID, fee);
-        uint256 devPart = fee * DEV_BPS / (POT_BPS + DEV_BPS);
+        uint256 devPart = projectFee * DEV_BPS / (POT_BPS + DEV_BPS);
         devAccrued += devPart;
-        pendingPot += fee - devPart;
+        pendingPot += projectFee - devPart;
+        if (platformFee != 0) {
+            platformAccrued += platformFee;
+            emit PlatformFeeAccrued(sender, isBuy, gross, platformFee);
+        }
+    }
+
+    /// @dev 0,3% Programmable с собственной покупки хука (Burn, Dip, Full-range): удерживаются из суммы покупки
+    ///      до свапа. Вызывается внутри unlockCallback, где ETH-клеймы на эту сумму уже сожжены в кредит.
+    function _platformOnOwnBuy(uint256 grossNative) private returns (uint256 pf) {
+        pf = Math.mulDiv(grossNative, PLATFORM_FEE_BPS, BPS, Math.Rounding.Ceil);
+        if (pf == 0) return 0;
+        poolManager.mint(address(this), ETH_ID, pf);
+        platformAccrued += pf;
+        emit PlatformFeeAccrued(address(this), true, grossNative, pf);
     }
 
     /// @dev Не должен ревертиться: любая ошибка здесь сломала бы все свапы пула.
